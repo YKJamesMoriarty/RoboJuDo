@@ -182,6 +182,50 @@ class g1_beyondmimic(RlPipelineCfg):
 
 
 @cfg_registry.register
+class g1_beyondmimic_roundhouse_left(RlPipelineCfg):
+    """
+    BeyondMimic policy exported from whole_body_tracking: roundhouse_left.onnx
+    """
+
+    robot: str = "g1"
+    env: G1MujocoEnvCfg = G1MujocoEnvCfg()
+    ctrl: list[KeyboardCtrlCfg] = [
+        KeyboardCtrlCfg(),
+    ]
+
+    policy: G1BeyondMimicPolicyCfg = G1BeyondMimicPolicyCfg(
+        policy_name="roundhouse_left",
+        # obs=160 -> with state estimator
+        without_state_estimator=False,
+        use_modelmeta_config=True,
+        use_motion_from_model=True,
+        max_timestep=-1,
+    )
+
+
+@cfg_registry.register
+class g1_beyondmimic_stance(RlPipelineCfg):
+    """
+    BeyondMimic policy exported from whole_body_tracking: stance.onnx
+    """
+
+    robot: str = "g1"
+    env: G1MujocoEnvCfg = G1MujocoEnvCfg()
+    ctrl: list[KeyboardCtrlCfg] = [
+        KeyboardCtrlCfg(),
+    ]
+
+    policy: G1BeyondMimicPolicyCfg = G1BeyondMimicPolicyCfg(
+        policy_name="stance",
+        # obs=160 -> with state estimator
+        without_state_estimator=False,
+        use_modelmeta_config=True,
+        use_motion_from_model=True,
+        max_timestep=-1,
+    )
+
+
+@cfg_registry.register
 class g1_beyondmimic_with_ctrl(RlPipelineCfg):
     """
     BeyondMimic with External BeyondMimicCtrl as motion source.
