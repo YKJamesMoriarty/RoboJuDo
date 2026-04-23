@@ -245,6 +245,32 @@ class BeyondMimicPolicyCfg(PolicyCfg):
         return self
 
 
+class BeyondAMPPolicyCfg(PolicyCfg):
+    policy_type: str = "BeyondAMPPolicy"
+    disable_autoload: bool = True
+
+    policy_name: str
+    obs_dim: int = 96
+
+    @property
+    def policy_file(self) -> str:
+        policy_file = ASSETS_DIR / f"models/{self.robot}/beyondamp/{self.policy_name}.onnx"
+        return policy_file.as_posix()
+
+    # ======= POLICY SPECIFIC CONFIGURATION =======
+    action_scales: list[float]
+
+    @model_validator(mode="after")
+    def check_action_scales(self):
+        if len(self.action_scales) != self.action_dof.num_dofs:
+            raise ValueError(
+                f"action_scales length {len(self.action_scales)} does not match num_dofs {self.action_dof.num_dofs}"
+            )
+        if self.obs_dim <= 0:
+            raise ValueError("obs_dim must be positive")
+        return self
+
+
 class AsapPolicyCfg(PolicyCfg):
     policy_type: str = "AsapPolicy"
     disable_autoload: bool = True

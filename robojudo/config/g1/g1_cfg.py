@@ -1,10 +1,12 @@
-from robojudo.config import cfg_registry
+from robojudo.config import ASSETS_DIR, cfg_registry
 from robojudo.controller.ctrl_cfgs import (
     JoystickCtrlCfg,  # noqa: F401
     KeyboardCtrlCfg,  # noqa: F401
     UnitreeCtrlCfg,  # noqa: F401
 )
 from robojudo.pipeline.pipeline_cfgs import (
+    BeyondAMPStartupCfg,  # noqa: F401
+    RlBeyondAMPPipelineCfg,  # noqa: F401
     RlLocoMimicPipelineCfg,  # noqa: F401
     RlMultiPolicyPipelineCfg,  # noqa: F401
     RlPipelineCfg,  # noqa: F401
@@ -23,6 +25,7 @@ from .env.g1_mujuco_env_cfg import G1_12MujocoEnvCfg, G1_23MujocoEnvCfg, G1Mujoc
 from .env.g1_real_env_cfg import G1RealEnvCfg, G1UnitreeCfg  # noqa: F401
 from .policy.g1_amo_policy_cfg import G1AmoPolicyCfg  # noqa: F401
 from .policy.g1_asap_policy_cfg import G1AsapLocoPolicyCfg, G1AsapPolicyCfg  # noqa: F401
+from .policy.g1_beyondamp_policy_cfg import G1BeyondAMPPolicyCfg  # noqa: F401
 from .policy.g1_beyondmimic_policy_cfg import G1BeyondMimicPolicyCfg  # noqa: F401
 from .policy.g1_h2h_policy_cfg import G1H2HPolicyCfg  # noqa: F401
 from .policy.g1_kungfubot_policy_cfg import G1KungfuBotGeneralPolicyCfg, G1KungfuBotPolicyCfg  # noqa: F401
@@ -222,6 +225,39 @@ class g1_beyondmimic_stance(RlPipelineCfg):
         use_modelmeta_config=True,
         use_motion_from_model=True,
         max_timestep=-1,
+    )
+
+
+@cfg_registry.register
+class g1_beyondamp_stance(RlBeyondAMPPipelineCfg):
+    """
+    BeyondAMP stance policy (actor ONNX only), with startup transition:
+    q_xml -> q_safe -> q_ref0 -> actor takeover.
+    """
+
+    robot: str = "g1"
+    env: G1MujocoEnvCfg = G1MujocoEnvCfg()
+    ctrl: list[KeyboardCtrlCfg] = [
+        KeyboardCtrlCfg(),
+    ]
+
+    policy: G1BeyondAMPPolicyCfg = G1BeyondAMPPolicyCfg(
+        policy_name="stance",
+    )
+
+    startup: BeyondAMPStartupCfg = BeyondAMPStartupCfg(
+        enable=False,  # 随机参考帧重置模式下，不再使用启动插值。
+        use_safe_stage=False,
+        ref_motion_file=(ASSETS_DIR / "motions/g1/beyondamp/trim_stance_orthodox_idle_normal_2_150.npz").as_posix(),
+        ref_frame_index=0,
+        safe_interp_steps=120,
+        ref_interp_steps=180,
+        use_smoothstep=True,
+        dryrun_policy_each_step=True,
+        reset_to_ref_random=True,
+        reset_with_root_pose=True,
+        reset_with_root_vel=True,
+        root_body_index=0,
     )
 
 
