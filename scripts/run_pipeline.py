@@ -26,6 +26,12 @@ def parse_args():
         default="g1",
         help="Name of the config class to use",
     )
+    parser.add_argument(
+        "--onnx",
+        type=str,
+        default=None,
+        help="Override ONNX model path for BeyondAMP/BeyondMimic quick A/B testing.",
+    )
     args = parser.parse_args()
     return args
 
@@ -33,6 +39,10 @@ def parse_args():
 def main():
     args = parse_args()
     logger.info(f"Using config: {args.config}")
+    if args.onnx:
+        # 通过环境变量把 CLI 路径传给 policy，避免侵入各类配置结构。
+        os.environ["ROBOJUDO_ONNX_OVERRIDE"] = args.onnx
+        logger.info(f"Using overridden onnx: {args.onnx}")
     config_manager = ConfigManager(config_name=args.config)
 
     cfg: RlPipelineCfg = config_manager.get_cfg()

@@ -18,8 +18,10 @@ class BeyondAMPPolicy(Policy):
     cfg_policy: BeyondAMPPolicyCfg
 
     def __init__(self, cfg_policy: BeyondAMPPolicyCfg, device: str):
-        if not os.path.isfile(cfg_policy.policy_file):
-            raise FileNotFoundError(f"Model file not found at {cfg_policy.policy_file}")
+        # 支持从命令行覆盖 ONNX：python scripts/run_pipeline.py -c ... --onnx /abs/path/model.onnx
+        self.policy_file = os.environ.get("ROBOJUDO_ONNX_OVERRIDE", cfg_policy.policy_file)
+        if not os.path.isfile(self.policy_file):
+            raise FileNotFoundError(f"Model file not found at {self.policy_file}")
 
         # ONNXRuntime provider 选择：优先尊重用户设备，其次回退到 CPU。
         available_providers = ort.get_available_providers()
@@ -30,7 +32,7 @@ class BeyondAMPPolicy(Policy):
         else:
             providers = ["CPUExecutionProvider"]
 
-        self.session = ort.InferenceSession(cfg_policy.policy_file, providers=providers)
+        self.session = ort.InferenceSession(self.policy_file, providers=providers)
 
         session_inputs = self.session.get_inputs()
         if len(session_inputs) != 1:
