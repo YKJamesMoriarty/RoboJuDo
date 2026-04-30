@@ -133,3 +133,5 @@ logs
 MUJOCO_LOG.TXT
 assets/resources
 .codex
+
+/assets/models/g1/beyondamp/
