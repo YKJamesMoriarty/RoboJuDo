@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import model_validator
 
@@ -40,6 +40,28 @@ class RlPipelineCfg(PipelineCfg):
 class BeyondAMPStartupCfg(Config):
     """BeyondAMP 在 sim2sim 启动阶段使用的两段过渡配置。"""
 
+    class FixedResetStateCfg(Config):
+        """Fixed reset state for sim2sim verification (no stochastic perturbation)."""
+
+        root_pos: list[float] | None = None
+        root_quat_wxyz: list[float] | None = None
+        root_lin_vel: list[float] | None = None
+        root_ang_vel: list[float] | None = None
+        joint_pos: list[float] | None = None
+        joint_vel: list[float] | None = None
+
+        @model_validator(mode="after")
+        def check_values(self):
+            if self.root_pos is not None and len(self.root_pos) != 3:
+                raise ValueError("root_pos must have length 3")
+            if self.root_quat_wxyz is not None and len(self.root_quat_wxyz) != 4:
+                raise ValueError("root_quat_wxyz must have length 4")
+            if self.root_lin_vel is not None and len(self.root_lin_vel) != 3:
+                raise ValueError("root_lin_vel must have length 3")
+            if self.root_ang_vel is not None and len(self.root_ang_vel) != 3:
+                raise ValueError("root_ang_vel must have length 3")
+            return self
+
     enable: bool = True
     """是否启用启动过渡。"""
 
@@ -67,8 +89,16 @@ class BeyondAMPStartupCfg(Config):
     dryrun_policy_each_step: bool = True
     """过渡期是否每步执行一次 policy 前向（输出不直接用于控制，仅做预热）。"""
 
+    reset_mode: Literal["random_ref", "fixed_init_state"] = "random_ref"
+    """Reset source for sim2sim:
+    - random_ref: sample a random frame from reference motion npz;
+    - fixed_init_state: write a fixed state (typically aligned with training init_state).
+    """
+
     reset_to_ref_random: bool = False
-    """是否在 reset/reborn 时直接随机采样参考帧写入仿真状态（无启动插值）。"""
+    """Backward-compat switch for random_ref reset.
+    Keep this field for compatibility with existing configs.
+    """
 
     reset_with_root_pose: bool = True
     """随机帧重置时，是否同时写入 root 位姿。"""
@@ -78,6 +108,9 @@ class BeyondAMPStartupCfg(Config):
 
     root_body_index: int = 0
     """在 body_* 数据中用于 root 的 body 索引（默认 0）。"""
+
+    fixed_reset_state: FixedResetStateCfg | None = None
+    """Fixed reset state used when ``reset_mode`` is ``fixed_init_state``."""
 
     @model_validator(mode="after")
     def check_values(self):
@@ -89,6 +122,8 @@ class BeyondAMPStartupCfg(Config):
             raise ValueError("ref_frame_index must be >= 0")
         if self.root_body_index < 0:
             raise ValueError("root_body_index must be >= 0")
+        if self.reset_mode == "fixed_init_state" and self.fixed_reset_state is None:
+            raise ValueError("fixed_reset_state must be set when reset_mode is 'fixed_init_state'")
         return self
 
 

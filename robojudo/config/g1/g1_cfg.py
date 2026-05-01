@@ -246,7 +246,7 @@ class g1_beyondamp_stance(RlBeyondAMPPipelineCfg):
     )
 
     startup: BeyondAMPStartupCfg = BeyondAMPStartupCfg(
-        enable=False,  # 随机参考帧重置模式下，不再使用启动插值。
+        enable=False,  # 固定姿态重置模式下，不使用启动插值。
         use_safe_stage=False,
         ref_motion_file=(ASSETS_DIR / "motions/g1/beyondamp/trim_stance_orthodox_idle_normal_2_150.npz").as_posix(),
         ref_frame_index=0,
@@ -254,7 +254,24 @@ class g1_beyondamp_stance(RlBeyondAMPPipelineCfg):
         ref_interp_steps=180,
         use_smoothstep=True,
         dryrun_policy_each_step=True,
-        reset_to_ref_random=True,
+        reset_mode="fixed_init_state",
+        reset_to_ref_random=False,
+        fixed_reset_state=BeyondAMPStartupCfg.FixedResetStateCfg(
+            # Align with beyondAMP stance task G1_CYLINDER_CFG.init_state.
+            root_pos=[0.0, 0.0, 0.76],
+            root_quat_wxyz=[1.0, 0.0, 0.0, 0.0],
+            root_lin_vel=[0.0, 0.0, 0.0],
+            root_ang_vel=[0.0, 0.0, 0.0],
+            # Joint order follows G1_29DoF in g1_env_cfg.py.
+            joint_pos=[
+                *[-0.312, 0.0, 0.0, 0.669, -0.363, 0.0],
+                *[-0.312, 0.0, 0.0, 0.669, -0.363, 0.0],
+                *[0.0, 0.0, 0.0],
+                *[0.2, 0.2, 0.0, 0.6, 0.0, 0.0, 0.0],
+                *[0.2, -0.2, 0.0, 0.6, 0.0, 0.0, 0.0],
+            ],
+            joint_vel=[0.0] * 29,
+        ),
         reset_with_root_pose=True,
         reset_with_root_vel=True,
         root_body_index=0,

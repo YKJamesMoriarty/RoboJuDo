@@ -26,6 +26,13 @@ class RlBeyondAMPPipeline(RlPipeline):
         SAFE_TO_REF = auto()
         DONE = auto()
 
+    def _use_random_ref_reset(self) -> bool:
+        startup_cfg = self.cfg.startup
+        return startup_cfg.reset_mode == "random_ref" and startup_cfg.reset_to_ref_random
+
+    def _use_fixed_init_state_reset(self) -> bool:
+        return self.cfg.startup.reset_mode == "fixed_init_state"
+
     def __init__(self, cfg: RlBeyondAMPPipelineCfg):
         # super().__init__ 过程中会执行 self_check/reset，此时本类启动状态尚未加载，
         # 先关掉启动状态机，待 super 完成后再初始化。
@@ -34,17 +41,23 @@ class RlBeyondAMPPipeline(RlPipeline):
 
         self._load_startup_targets()
         self._startup_runtime_ready = True
-        if self.cfg.startup.reset_to_ref_random:
+        if self._use_random_ref_reset():
             self._reset_env_to_random_motion_frame()
+            self.policy.reset()
+        elif self._use_fixed_init_state_reset():
+            self._reset_env_to_fixed_init_state()
             self.policy.reset()
         self._reset_startup_state()
 
     def reset(self):
         super().reset()
         if self._startup_runtime_ready:
-            if self.cfg.startup.reset_to_ref_random:
+            if self._use_random_ref_reset():
                 self._reset_env_to_random_motion_frame()
                 # 环境状态被强制写入后，清理策略内部状态，避免沿用旧 last_action。
+                self.policy.reset()
+            elif self._use_fixed_init_state_reset():
+                self._reset_env_to_fixed_init_state()
                 self.policy.reset()
             self._reset_startup_state()
 
@@ -114,7 +127,10 @@ class RlBeyondAMPPipeline(RlPipeline):
 
     def _reset_startup_state(self):
         self._startup_enabled = bool(
-            self.cfg.env.is_sim and self.cfg.startup.enable and (not self.cfg.startup.reset_to_ref_random)
+            self.cfg.env.is_sim
+            and self.cfg.startup.enable
+            and (not self._use_random_ref_reset())
+            and (not self._use_fixed_init_state_reset())
         )
         if not self._startup_enabled:
             self._startup_stage = self.StartupStage.DONE
@@ -140,11 +156,13 @@ class RlBeyondAMPPipeline(RlPipeline):
                     "[BeyondAMP startup] Single-stage begin: q_xml -> q_ref0 "
                     f"(steps={self.cfg.startup.ref_interp_steps})"
                 )
-        elif self.cfg.startup.reset_to_ref_random:
+        elif self._use_random_ref_reset():
             logger.info("[BeyondAMP startup] reset_to_ref_random enabled, skip startup interpolation.")
+        elif self._use_fixed_init_state_reset():
+            logger.info("[BeyondAMP startup] fixed_init_state reset enabled, skip startup interpolation.")
 
     def _reset_env_to_random_motion_frame(self):
-        if not self.cfg.startup.reset_to_ref_random:
+        if not self._use_random_ref_reset():
             return
 
         if not hasattr(self.env, "data") or not hasattr(self.env, "model"):
@@ -216,6 +234,72 @@ class RlBeyondAMPPipeline(RlPipeline):
             "[BeyondAMP startup] Random ref reset applied: "
             f"frame={frame_idx}, root_body_index={self.cfg.startup.root_body_index}"
         )
+
+    def _reset_env_to_fixed_init_state(self):
+        if not self._use_fixed_init_state_reset():
+            return
+
+        if not hasattr(self.env, "data") or not hasattr(self.env, "model"):
+            logger.warning("fixed_init_state reset only supports MujocoEnv currently.")
+            return
+
+        fixed_state = self.cfg.startup.fixed_reset_state
+        if fixed_state is None:
+            logger.warning("fixed_init_state reset is enabled but fixed_reset_state is None.")
+            return
+
+        if fixed_state.joint_pos is None:
+            logger.warning("fixed_init_state reset requires joint_pos, skip.")
+            return
+
+        q = np.asarray(fixed_state.joint_pos, dtype=np.float32)
+        if q.shape[0] != self.env.num_dofs:
+            logger.error(
+                f"Fixed init reset aborted: dof mismatch, expected {self.env.num_dofs}, got {q.shape[0]}"
+            )
+            return
+
+        qd = (
+            np.asarray(fixed_state.joint_vel, dtype=np.float32)
+            if fixed_state.joint_vel is not None
+            else np.zeros_like(q, dtype=np.float32)
+        )
+        if qd.shape[0] != self.env.num_dofs:
+            logger.error(
+                f"Fixed init reset aborted: joint_vel dof mismatch, expected {self.env.num_dofs}, got {qd.shape[0]}"
+            )
+            return
+
+        # 直接写入 MuJoCo 状态。
+        import mujoco
+
+        mujoco.mj_resetDataKeyframe(self.env.model, self.env.data, 0)
+
+        if fixed_state.root_pos is not None:
+            self.env.data.qpos[0:3] = np.asarray(fixed_state.root_pos, dtype=np.float32)
+        if fixed_state.root_quat_wxyz is not None:
+            root_quat_wxyz = np.asarray(fixed_state.root_quat_wxyz, dtype=np.float32)
+            quat_norm = float(np.linalg.norm(root_quat_wxyz))
+            if quat_norm > 1e-6:
+                root_quat_wxyz = root_quat_wxyz / quat_norm
+            else:
+                root_quat_wxyz = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32)
+            self.env.data.qpos[3:7] = root_quat_wxyz
+
+        self.env.data.qpos[-self.env.num_dofs :] = q
+
+        self.env.data.qvel[:] = 0.0
+        if fixed_state.root_lin_vel is not None:
+            self.env.data.qvel[0:3] = np.asarray(fixed_state.root_lin_vel, dtype=np.float32)
+        if fixed_state.root_ang_vel is not None:
+            self.env.data.qvel[3:6] = np.asarray(fixed_state.root_ang_vel, dtype=np.float32)
+        self.env.data.qvel[-self.env.num_dofs :] = qd
+
+        self.env.data.ctrl[:] = 0.0
+        mujoco.mj_forward(self.env.model, self.env.data)
+        self.env.update()
+
+        logger.info("[BeyondAMP startup] Fixed init_state reset applied.")
 
     def _stage_total_steps(self) -> int:
         if self._startup_stage == self.StartupStage.XML_TO_SAFE:
@@ -311,9 +395,14 @@ class RlBeyondAMPPipeline(RlPipeline):
     def post_step_callback(self, env_data, ctrl_data, extras, pd_target):
         super().post_step_callback(env_data, ctrl_data, extras, pd_target)
         commands = ctrl_data.get("COMMANDS", [])
-        if self.cfg.startup.reset_to_ref_random and ("[SIM_REBORN]" in commands):
+        if self._use_random_ref_reset() and ("[SIM_REBORN]" in commands):
             # super 已执行过 env.reborn，这里二次覆盖为随机参考帧。
             self._reset_env_to_random_motion_frame()
+            self.policy.reset()
+            self._reset_startup_state()
+        elif self._use_fixed_init_state_reset() and ("[SIM_REBORN]" in commands):
+            # super 已执行过 env.reborn，这里二次覆盖为固定姿态。
+            self._reset_env_to_fixed_init_state()
             self.policy.reset()
             self._reset_startup_state()
 
